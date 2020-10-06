@@ -58,7 +58,7 @@ module CallbackSpecs
       callback :cbIrV, [ :int ], :void
       callback :cbLrV, [ :long ], :void
       callback :cbULrV, [ :ulong ], :void
-      callback :cbLrV, [ :long_long ], :void
+      callback :cbLLrV, [ :long_long ], :void
       callback :cbVrT, [ ], S8F32S32.by_value
       callback :cbTrV, [ S8F32S32.by_value ], :void
       callback :cbYrV, [ S8F32S32.ptr ], :void
@@ -325,6 +325,42 @@ module CallbackSpecs
       expect(LibTest.testGVarCallbackVrS8(LibTest.pVrS8)).to eq(0x1e)
     end
 
+    describe "with proc" do
+      it "should be usabel for different signatures" do
+        pr = proc { 42 }
+        expect(LibTest.testCallbackVrS8(pr)).to eq(42)
+        expect(LibTest.testCallbackVrS8(&pr)).to eq(42)
+        expect(LibTest.testCallbackVrU8(pr)).to eq(42)
+        expect(LibTest.testCallbackVrU8(&pr)).to eq(42)
+        expect(LibTest.testCallbackVrS16(pr)).to eq(42)
+        expect(LibTest.testCallbackVrS8(pr)).to eq(42)
+      end
+
+      if RUBY_ENGINE == "ruby"
+        it "stores function pointers as ivar in proc object" do
+          pr = proc { 42 }
+          expect(LibTest.testCallbackVrS8(pr)).to eq(42)
+          # A proc argument should implicit create a FFI::Function
+          func = pr.instance_variable_get(:@__ffi_callback__)
+          expect(func).to be_kind_of(FFI::Function)
+
+          expect(LibTest.testCallbackVrS8(&pr)).to eq(42)
+          # A proc argument should reuse FFI::Function for the same callback
+          expect(pr.instance_variable_get(:@__ffi_callback__)).to be(func)
+          expect(pr.instance_variable_defined?(:@__ffi_callback_table__)).to be_falsey
+
+          expect(LibTest.testCallbackVrU8(pr)).to eq(42)
+          expect(LibTest.testCallbackVrU8(&pr)).to eq(42)
+          # A second callback signature (FFI::FunctionInfo) is stored in a Hash table
+          expect(pr.instance_variable_get(:@__ffi_callback_table__).length).to eq(1)
+
+          expect(LibTest.testCallbackVrS16(pr)).to eq(42)
+          # A third callback signature should create another Hash entry
+          expect(pr.instance_variable_get(:@__ffi_callback_table__).length).to eq(2)
+        end
+      end
+    end
+
     describe "When the callback is considered optional by the underlying library" do
       it "should handle receiving 'nil' in place of the closure" do
         expect(LibTest.testOptionalCallbackCrV(nil, 13)).to be_nil
@@ -410,6 +446,7 @@ module CallbackSpecs
           attach_function :testCallbackAsArgument_2, :testArgumentClosure, [ :cb_with_cb_argument, :int ], :int
         end).to be_an_instance_of FFI::Function
       end
+
       it 'should be able to use the callback argument' do
         module LibTest
           extend FFI::Library
@@ -433,6 +470,7 @@ module CallbackSpecs
         expect(callback_arg_called).to be true
         expect(callback_with_callback_arg_called).to be true
       end
+
       it 'function returns callable object' do
         module LibTest
           extend FFI::Library
